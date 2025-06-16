@@ -66,6 +66,22 @@ def beregn_interval_forrige(bruger_id, start_tid):
         return int(forskel)
     return None
 
+def tjek_for_tre_veer_under_tre_minutter(bruger_id):
+    cursor.execute("""
+        SELECT slut_tidspunkt, start_tidspunkt FROM VeRegistrering
+        WHERE bruger_id = %s
+        ORDER BY start_tidspunkt DESC
+        LIMIT 3
+    """, (bruger_id,))
+    veer = cursor.fetchall()
+    if len(veer) < 3:
+        return False
+
+    interval1 = (veer[0]['start_tidspunkt'] - veer[1]['slut_tidspunkt']).total_seconds()
+    interval2 = (veer[1]['start_tidspunkt'] - veer[2]['slut_tidspunkt']).total_seconds()
+
+    return interval1 <= 180 and interval2 <= 180
+
 # ----- Endpoints -----
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -126,7 +142,18 @@ def gem_ve():
         log_handling(bruger_id, "Ve-registrering",
                      f"Start: {start_ts}, Slut: {stop_ts}, Varighed: {duration_sec}, Interval: {interval_sec}")
 
-        return make_xml_response("Message", "Ve registreret")
+        advarsel = ""
+        if tjek_for_tre_veer_under_tre_minutter(bruger_id):
+            advarsel = "ADVARSEL: Veerne kommer meget hyppigt – kontakt fødeafdeling"
+            tidspunkt = datetime.now()
+            cursor.execute("""
+                INSERT INTO Noter (bruger_id, tidspunkt, noter_type, beskrivelse)
+                VALUES (%s, %s, %s, %s)
+            """, (bruger_id, tidspunkt, "Advarsel", advarsel))
+            conn.commit()
+            log_handling(bruger_id, "Advarsel", advarsel)
+
+        return make_xml_response("Message", advarsel or "Ve registreret")
     except Exception as e:
         return make_xml_response("Error", str(e)), 500
 
