@@ -5,16 +5,12 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 import mysql.connector
 import bcrypt
-from cryptography.fernet import Fernet
 import uuid
 import os
 from dotenv import load_dotenv
 
 # ----- Indlæs miljøvariabler -----
 load_dotenv(dotenv_path='miljø.env')
-
-# ----- Kryptering -----
-fernet = Fernet(os.getenv("FERNET_KEY").encode())
 
 # ----- Flask setup -----
 app = Flask(__name__)
@@ -92,8 +88,7 @@ def login():
     cpr = root.findtext("CPR")
     pin = root.findtext("PIN")
 
-    encrypted_cpr = fernet.encrypt(cpr.encode()).decode()
-    cursor.execute("SELECT * FROM Bruger WHERE cpr_krypteret=%s", (encrypted_cpr,))
+    cursor.execute("SELECT * FROM Bruger WHERE cpr = %s", (cpr,))
     bruger = cursor.fetchone()
 
     if bruger:
@@ -165,16 +160,15 @@ def opret_bruger():
         navn = root.findtext("Navn")
         pin = root.findtext("PIN")
 
-        encrypted_cpr = fernet.encrypt(cpr.encode()).decode()
-        cursor.execute("SELECT * FROM Bruger WHERE cpr_krypteret = %s", (encrypted_cpr,))
+        cursor.execute("SELECT * FROM Bruger WHERE cpr = %s", (cpr,))
         if cursor.fetchone():
             return make_xml_response("Message", "Bruger findes allerede"), 409
 
         hashed_pin = bcrypt.hashpw(pin.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         cursor.execute("""
-            INSERT INTO Bruger (cpr_krypteret, navn, pin_kode_hash)
+            INSERT INTO Bruger (cpr, navn, pin_kode_hash)
             VALUES (%s, %s, %s)
-        """, (encrypted_cpr, navn, hashed_pin))
+        """, (cpr, navn, hashed_pin))
         conn.commit()
 
         cursor.execute("SELECT LAST_INSERT_ID() AS id")
@@ -226,4 +220,4 @@ def gem_note():
 
 # ----- Start server -----
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5050, debug=True)
